@@ -1,0 +1,11 @@
+ripulire il codice
+centrare il logo
+funzioni di base che ci devono essere:
+ - luminosita'
+ - zoom
+ - colore
+dissipatori a led
+dissipatore telecamera
+ventola raffreddamento telecamera
+sportellino regolazione telecamera
+nuova staffa telecamera
