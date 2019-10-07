@@ -15,10 +15,10 @@ import glob #to list files
 import shelve
 
 
-class OpencvImageWidgetNew(gui.Image):
+class OpencvImageWidget(gui.Image):
     def __init__(self, filename, app_instance, **kwargs):
         self.app_instance = app_instance
-        super(OpencvImageWidgetNew, self).__init__("/%s/get_image_data" % id(self), **kwargs)
+        super(OpencvImageWidget, self).__init__("/%s/get_image_data" % id(self), **kwargs)
         self.img = cv2.imread(filename, 0)
         self.frame_index = 0
         self.set_image(filename)
@@ -59,38 +59,6 @@ class OpencvImageWidgetNew(gui.Image):
             return [jpeg.tostring(), headers]
         return None, None
 
-class OpencvImageWidget(gui.Image):
-    def __init__(self, filename, **kwargs):
-        super(OpencvImageWidget, self).__init__("/%s/get_image_data" % id(self), **kwargs)
-        self.img = cv2.imread(filename, 0)
-        self.frame_index = 0
-        self.set_image(filename)
-
-    def set_image(self, filename):
-        self.img = cv2.imread(filename, cv2.IMREAD_COLOR) #cv2.IMREAD_GRAYSCALE)#cv2.IMREAD_COLOR)
-        super(OpencvImageWidget, self).set_image( "/%s/get_image_data?index=%s" % (self.identifier, self.frame_index) )
-        self.frame_index += 1
-
-    def refresh(self, opencv_img=None):
-        self.img = opencv_img
-        super(OpencvImageWidget, self).set_image( "/%s/get_image_data?index=%s" % (self.identifier, self.frame_index) )
-        self.frame_index += 1
-        self.style['background-image'] = "url('/%s/get_image_data?index=%s')" % (self.identifier, self.frame_index)
-
-    def refresh_no_buffering(self, opencv_img=None):
-        self.img = opencv_img
-        self.frame_index += 1
-        super(OpencvImageWidget, self).set_image( "/%s/get_image_data?index=%s" % (self.identifier, self.frame_index) )
-        self.style['background-image'] = "url('/%s/get_image_data?index=%s')" % (self.identifier, self.frame_index)
-
-    def get_image_data(self, index=0):
-        ret, jpeg = cv2.imencode('.png', self.img)
-        if ret:
-            headers = {'Content-type': 'image/png'}
-            # tostring is an alias to tobytes, which wasn't added till numpy 1.9
-            return [jpeg.tostring(), headers]
-        return None, None
-
 
 class MiniatureImageWidget(gui.HBox):
     def __init__(self, filename, *args, **kwargs):
@@ -108,31 +76,6 @@ class MiniatureImageWidget(gui.HBox):
         pass
 
 
-"""
-class CameraImageWidget(gui.Image):
-    def __init__(self, camera, **kwargs):
-        super(CameraImageWidget, self).__init__("/%s/get_image_data" % id(self), **kwargs)
-        self.frame_index = 0
-        self.camera = camera
-        self.last_image = [None, None]
-
-    def next_frame(self):
-        self.set_image( "/%s/get_image_data?index=%s" % (self.identifier, self.frame_index) )
-        self.frame_index += 1
-        #the following line prevents video flickering
-        self.style['background-image'] = "url('/%s/get_image_data?index=%s')" % (self.identifier, self.frame_index)
-
-    def get_image_data(self, index=0):
-        #ret, frame = self.capture.read()
-        jpeg = self.camera.get_last_image()
-        if not jpeg is None:
-            headers = {'Content-type': 'image/jpeg'}
-            # tostring is an alias to tobytes, which wasn't added till numpy 1.9
-            self.last_image = [jpeg.tostring(), headers]
-            #except:
-            #    pass
-        return self.last_image
-"""
 def process_thread(app,
                 camera, 
                 img_logo,
@@ -383,117 +326,6 @@ def live_video_thread(app,
                 app.show_process_image(img)
                 
 
-
-
-def process_thread_fast(app,
-                camera, 
-                img_logo,
-                stitch_minimum_overlap, 
-                perspective_correction_value_horiz, 
-                perspective_correction_value_vert):
-
-    app.process_thread_stop_flag = False
-    roi_logo_x = gui.from_pix(app.roi_logo_widget.style['left'])
-    roi_logo_w = roi_logo_x + gui.from_pix(app.roi_logo_widget.style['width'])
-
-    while not app.process_thread_stop_flag:
-        #print("thread loop")
-        images_buffer = camera.get_image_buf()
-        old_y = 0
-        marche_trovate = 0
-        immagine_nastro = None
-
-        offset_y = -1
-
-        index = 1
-
-        if not images_buffer is None:
-            for t,img in images_buffer:
-                #filename = "%s.jpg"%str(time.time())
-                #cv2.imwrite("./immagini_processo/" + filename, img)
-                #img = app.calibrate_image(img)
-                img2 = image_utils.perspective_correction(img, perspective_correction_value_horiz, perspective_correction_value_vert)
-                del img
-                img = img2
-                if immagine_nastro is None:
-                    immagine_nastro = img.copy()
-                    continue
-
-                if offset_y==-1:
-                    ok, _off_y, similarity_result = image_utils.find_stitch_offset(img, immagine_nastro, roi_logo_x, roi_logo_w)
-                    if ok:
-                        offset_y=_off_y
-                    else:
-                        immagine_nastro = img.copy()
-                        index = 1
-                        continue
-
-                #forse invertire le immagini top e bottom
-                #immagine_nastro = image_utils.stitch_fast(immagine_nastro, img, roi_logo_x, roi_logo_w)
-                immagine_nastro = image_utils.stitch_offset(img, immagine_nastro, offset_y*index)
-                index = index + 1
-                """
-                app.show_process_image(immagine_nastro)
-                time.sleep(2)
-                ok, x, y, similarity_result = image_utils.match_template(img_marca, img[:,roi_marca_x:roi_marca_w], similarity=0.1)
-                if ok: #la marca e' stata trovata
-                    if old_y < y or marche_trovate == 0:
-                        old_y = y
-                        marche_trovate = marche_trovate + 1
-                    else:
-                        continue
-                else:
-                    pass
-                
-                
-
-                if marche_trovate>=3:    
-                    marche_trovate = 2
-                    
-                    #da ora in poi, qualunque nuova marca trovata possiamo mostare il logo centrato a quella precedente
-                """
-        if not immagine_nastro is None:
-            app.show_process_image(immagine_nastro)
-
-def conta_marche(image, marca_image, size_tolerance=0.8):
-    #marca_image = cv2.cvtColor(marca_image, cv2.COLOR_BGR2GRAY)#cv2.equalizeHist(cv2.cvtColor(marca_image, cv2.COLOR_BGR2GRAY))
-    #image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)#cv2.equalizeHist(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
-
-    #mean = cv2.mean(marca_image)
-    marca_image_thresh = image_utils.threshold(marca_image)#cv2.threshold(marca_image,mean[0],255,0)
-    #definiamo parametri per selezione dei blob
-    params = cv2.SimpleBlobDetector_Params()
-    params.filterByCircularity = False
-    params.filterByConvexity = False
-    params.filterByInertia = False
-    # Change thresholds
-    params.minThreshold = 100    # the graylevel of images
-    params.maxThreshold = 255
-    params.filterByColor = False
-    #params.blobColor = 255
-    # Filter by Area
-    params.filterByArea = False
-    detector = cv2.SimpleBlobDetector_create(params) #SimpleBlobDetector()
-    # Detect blobs.
-    keypoints = detector.detect(marca_image_thresh.astype(np.uint8))
-    max_size = 0
-
-    for k in keypoints:
-        if k.size>max_size:
-            max_size = k.size
-
-    image_thresh = image_utils.threshold(image)#cv2.threshold(image,mean[0],255,0)
-    params.filterByArea = True
-    params.minArea = max_size*size_tolerance
-    params.maxArea = marca_image_thresh.shape[0]*marca_image_thresh.shape[1]
-
-    detector = cv2.SimpleBlobDetector_create(params)
-    keypoints = detector.detect(image_thresh.astype(np.uint8))
-
-    print(len(keypoints))
-    return len(keypoints), cv2.merge((image_thresh,image_thresh,image_thresh))
-
-
 class MyApp(App):
     def __init__(self, *args, **kwargs):
         #DON'T MAKE CHANGES HERE, THIS METHOD GETS OVERWRITTEN WHEN SAVING IN THE EDITOR
@@ -530,46 +362,57 @@ class MyApp(App):
         menubar.style.update({"margin":"0px","position":"static","overflow":"visible","grid-area":"menubar","background-color":"#455eba", "z-index":"1"})
         menubar.append(menu)
 
-
         main_container = GridBox()
         main_container.attributes.update({"class":"GridBox","editor_constructor":"()","editor_varname":"main_container","editor_tag_type":"widget","editor_newclass":"False","editor_baseclass":"GridBox"})
-        main_container.style.update({"margin":"0px","display":"grid","width":"100%","height":"100%","position":"absolute","overflow":"hidden","grid-template-areas":"'container_commands container_image container_image container_parameters' 'container_commands container_miniature container_miniature container_parameters' 'container_process container_process start_stop live_video'","grid-template-columns":"10% 60% 20% 10%","grid-template-rows":"70% 10% 20%"})
-        
+        main_container.default_layout = """
+        |container_commands |container_image                                                                   | container_parameters  |
+        |container_commands |container_image                                                                   | container_parameters  |
+        |container_commands |container_image                                                                   | container_parameters  |
+        |container_commands |container_image                                                                   | container_parameters  |
+        |container_commands |container_image                                                                   | container_parameters  |
+        |container_commands |container_miniature                                                               | container_parameters  |
+        |container_process  |container_process                                                                 |start_stop | live_video|    
+        """
+        main_container.set_from_asciiart(main_container.default_layout)
+
         #main_container.append(menubar,'menubar')
         container_commands = VBox()
-        container_commands.attributes.update({"class":"VBox","editor_constructor":"()","editor_varname":"container_commands","editor_tag_type":"widget","editor_newclass":"False","editor_baseclass":"Widget"})
         container_commands.style.update({"margin":"0px","display":"flex","justify-content":"flex-start","align-items":"center","flex-direction":"column","position":"static","overflow":"auto","grid-area":"container_commands","border-width":"2px","border-style":"dotted","border-color":"#8a8a8a"})
+
+        #parametri di stile per i pulsanti
+        btparams = {"margin":"2px","width":"100px","height":"30px","top":"20px","position":"static","overflow":"auto","order":"-1"}
+
         bt_trigger = Button('Trigger')
-        bt_trigger.attributes.update({"class":"Button","editor_constructor":"('Trigger')","editor_varname":"bt_trigger","editor_tag_type":"widget","editor_newclass":"False","editor_baseclass":"Button"})
-        bt_trigger.style.update({"background-color":"green", "margin":"2px","width":"100px","height":"30px","top":"20px","position":"static","overflow":"auto","order":"-1"})
+        bt_trigger.style.update({"background-color":"green", **btparams})
+
         container_commands.append(bt_trigger,'bt_trigger')
+
         bt_set_logo = Button('Imposta logo')
-        bt_set_logo.attributes.update({"class":"Button","editor_constructor":"('Imposta logo')","editor_varname":"bt_set_logo","editor_tag_type":"widget","editor_newclass":"False","editor_baseclass":"Button"})
-        bt_set_logo.style.update({"background-color":"darkorange","margin":"2px","width":"100px","height":"30px","top":"20px","position":"static","overflow":"auto","order":"-1"})
+        bt_set_logo.style.update({"background-color":"darkorange", **btparams})
         container_commands.append(bt_set_logo,'bt_set_logo')
         main_container.append(container_commands,'container_commands')
 
-        bt_search_logo = Button('Trova logo', style={"background-color":"orange","margin":"2px","width":"100px","height":"30px","top":"20px","position":"static","overflow":"auto","order":"-1"})
+        bt_search_logo = Button('Trova logo', style={"background-color":"orange", **btparams})
         bt_search_logo.onclick.connect(self.onclick_search_logo)
         container_commands.append(bt_search_logo, "bt_search_logo")
 
-        bt_apply_calib_to_image = Button('Applica calibrazione', style={"background-color":"darkblue","margin":"2px","width":"100px","height":"30px","top":"20px","position":"static","overflow":"auto","order":"-1"})
+        bt_apply_calib_to_image = Button('Applica calibrazione', style={"background-color":"darkblue", **btparams})
         bt_apply_calib_to_image.onclick.connect(self.onclick_apply_calib_to_image)
         container_commands.append(bt_apply_calib_to_image, "bt_apply_calib_to_image")
 
-        bt_perspective_correct = Button('Correggi prospettiva', style={"background-color":"darkblue","margin":"2px","width":"100px","height":"30px","top":"20px","position":"static","overflow":"auto","order":"-1"})
+        bt_perspective_correct = Button('Correggi prospettiva', style={"background-color":"darkblue", **btparams})
         bt_perspective_correct.onclick.connect(self.onclick_perspective_correction)
         container_commands.append(bt_perspective_correct, "bt_perspective_correct")
 
-        bt_apply_filter = Button('Applica filtro threshold', style={"background-color":"black","margin":"2px","width":"100px","height":"30px","top":"20px","position":"static","overflow":"auto","order":"-1"})
+        bt_apply_filter = Button('Applica filtro threshold', style={"background-color":"black", **btparams})
         bt_apply_filter.onclick.connect(self.onclick_apply_filter, image_utils.threshold)
         container_commands.append(bt_apply_filter, "bt_apply_filter_threshold")
 
-        bt_apply_filter = Button('Applica filtro canny', style={"background-color":"darkgray","margin":"2px","width":"100px","height":"30px","top":"20px","position":"static","overflow":"auto","order":"-1"})
+        bt_apply_filter = Button('Applica filtro canny', style={"background-color":"darkgray", **btparams})
         bt_apply_filter.onclick.connect(self.onclick_apply_filter, image_utils.canny)
         container_commands.append(bt_apply_filter, "bt_apply_filter_canny")
 
-        bt_apply_filter = Button('Equalizza histogramma', style={"background-color":"violet","margin":"2px","width":"100px","top":"20px","position":"static","overflow":"auto","order":"-1"})
+        bt_apply_filter = Button('Equalizza histogramma', style={"background-color":"violet", **btparams})
         bt_apply_filter.onclick.connect(self.onclick_apply_filter, image_utils.histogram_equalize)
         container_commands.append(bt_apply_filter, "bt_apply_filter_equalize")
 
@@ -580,7 +423,7 @@ class MyApp(App):
         
         #self.camera.start()
 
-        self.camera_image = OpencvImageWidgetNew("./test.bmp", self)#, width="100%", height="100%")
+        self.camera_image = OpencvImageWidget("./test.bmp", self)#, width="100%", height="100%")
         self.camera_image.attributes.update({"class":"Widget","editor_constructor":"()","editor_varname":"container_image","editor_tag_type":"widget","editor_newclass":"False","editor_baseclass":"Widget"})
         container_camera_image = gui.Widget()
         container_camera_image.append(self.camera_image)
@@ -599,7 +442,6 @@ class MyApp(App):
         container_camera_image.append(self.roi_logo_widget)
 
         container_parameters = VBox()
-        container_parameters.attributes.update({"class":"VBox","editor_constructor":"()","editor_varname":"container_parameters","editor_tag_type":"widget","editor_newclass":"False","editor_baseclass":"Widget"})
         container_parameters.style.update({"margin":"0px","display":"flex","justify-content":"flex-start","align-items":"center","flex-direction":"column","position":"static","overflow":"auto","grid-area":"container_parameters","border-color":"#808080","border-width":"2px","border-style":"dotted"})
         
         lbl_exposure = Label('Esposizione')
@@ -625,11 +467,9 @@ class MyApp(App):
 
         main_container.append(container_parameters,'container_parameters')
         container_miniature = HBox()
-        container_miniature.attributes.update({"class":"HBox","editor_constructor":"()","editor_varname":"container_miniature","editor_tag_type":"widget","editor_newclass":"False","editor_baseclass":"Widget"})
         container_miniature.style.update({"margin":"0px","display":"flex","justify-content":"flex-end","align-items":"center","flex-direction":"row-reverse","position":"static","overflow-x":"scroll","grid-area":"container_miniature","background-color":"#e0e0e0"})
         main_container.append(container_miniature,'container_miniature')
         container_process = HBox()
-        container_process.attributes.update({"class":"HBox","editor_constructor":"()","editor_varname":"container_process","editor_tag_type":"widget","editor_newclass":"False","editor_baseclass":"Widget"})
         container_process.style.update({"margin":"0px","display":"flex","justify-content":"space-around","align-items":"center","flex-direction":"row","position":"static","overflow":"auto","grid-area":"container_process","background-color":"#e6e6e6","border-color":"#828282","border-width":"2px","border-style":"dotted"})
         main_container.append(container_process,'container_process')
 
@@ -648,7 +488,6 @@ class MyApp(App):
         container_process.append(self.plot_histo_image_hsv)
 
         start_stop = Button('Start')
-        start_stop.attributes.update({"class":"Button","editor_constructor":"('Start')","editor_varname":"start_stop","editor_tag_type":"widget","editor_newclass":"False","editor_baseclass":"Button"})
         start_stop.style.update({"margin":"0px","position":"static","overflow":"auto","grid-area":"start_stop","background-color":"#39e600","font-weight":"bolder","font-size":"30px","height":"100%","letter-spacing":"3px"})
         main_container.append(start_stop,'start_stop')
         main_container.children['container_commands'].children['bt_trigger'].onclick.connect(self.onclick_bt_trigger)
@@ -852,18 +691,23 @@ class MyApp(App):
             emitter.set_text("Stop")
             emitter.style['background-color'] = 'red'
             self.main_container.children['start_stop'].onclick.connect(self.onclick_start_stop, self.camera.stop)
-
-            self.main_container.style["grid-template-areas"] = "'container_image container_parameters' 'container_image start_stop'"
-            self.main_container.style["grid-template-columns"] = "90% 10%"
-            self.main_container.style["grid-template-rows"] = "90% 10%"
+            main_container.set_from_asciiart("""
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | start_stop            |
+            """)
+            
         else:
             self.process_thread_stop_flag = True
             emitter.set_text("Start")
             emitter.style['background-color'] = 'green'
             self.main_container.children['start_stop'].onclick.connect(self.onclick_start_stop, self.camera.start)
-            self.main_container.style["grid-template-areas"] = "'container_commands container_image container_image container_parameters' 'container_commands container_miniature container_miniature container_parameters' 'container_process container_process start_stop live_video'"
-            self.main_container.style["grid-template-columns"] = "10% 60% 20% 10%"
-            self.main_container.style["grid-template-rows"] = "70% 10% 20%"
+            main_container.set_from_asciiart(self.main_container.default_layout)
 
     def onclick_live_video(self, emitter, method):
         method() #start or stop
@@ -877,20 +721,23 @@ class MyApp(App):
             emitter.set_text("Live Stop")
             emitter.style['background-color'] = 'yellow'
             self.main_container.children['live_video'].onclick.connect(self.onclick_live_video, self.camera.stop)
+            main_container.set_from_asciiart("""
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | live_video            |
+            """)
 
-            self.main_container.style["grid-template-areas"] = "'container_image container_parameters' 'container_image live_video'"
-            self.main_container.style["grid-template-columns"] = "90% 10%"
-            self.main_container.style["grid-template-rows"] = "90% 10%"
         else:
             self.process_thread_stop_flag = True
             emitter.set_text("Live Start")
             emitter.style['background-color'] = 'blue'
             self.main_container.children['live_video'].onclick.connect(self.onclick_live_video, self.camera.start)
-            self.main_container.style["grid-template-areas"] = "'container_commands container_image container_image container_parameters' 'container_commands container_miniature container_miniature container_parameters' 'container_process container_process start_stop live_video'"
-            self.main_container.style["grid-template-columns"] = "10% 60% 20% 10%"
-            self.main_container.style["grid-template-rows"] = "70% 10% 20%"
-
-
+            main_container.set_from_asciiart(self.main_container.default_layout)
 
     def menu_open_clicked(self, widget):
         self.fileselectionDialog = gui.FileSelectionDialog('File Selection Dialog', 'Select files and folders', True, '.')
