@@ -299,11 +299,81 @@ def process_thread(app,
         #except:
         #    print("exception")
 
+def image_overprint_thread(app,
+                camera,
+                perspective_correction_value_horiz, 
+                perspective_correction_value_vert):
+    """ Si prende un'immagine
+        tutte le successive immagini vengono matchate unite e sovrapposte a questa
+    """
+    app.process_thread_stop_flag = False
+    
+    images_buffer = None
+
+
+    immagine_nastro = None
+    vel_nastro_array = []
+    similarity_array = []
+    while not app.process_thread_stop_flag:
+        try:
+            images_buffer = camera.get_image_buf()
+            
+            """
+            print("attenzione, salvataggio immagini da disabilitare !!!")
+            for t,img in images_buffer[:]: 
+                filename = "%s.png"%str(time.time())
+                cv2.imwrite("./immagini_processo/test/" + filename, img)
+            """
+            if not images_buffer is None:
+                print("Thread loop - Immagini da giuntare: %s"%len(images_buffer))
+
+                mem_t, img = images_buffer[0]
+                immagine_nastro = image_utils.perspective_correction(img, perspective_correction_value_horiz, perspective_correction_value_vert)
+                mem_image = img
+                for t,img in images_buffer[1:]:
+                    #img = image_utils.histogram_equalize(img)
+                    #img = app.calibrate_image(img)
+
+                    #memorizzazione area logo da selezione a video
+                    roi_logo_x1 = gui.from_pix(app.selection_area_widget.style['left'])
+                    roi_logo_x2 = roi_logo_x1 + gui.from_pix(app.selection_area_widget.style['width'])
+
+                    #tentativo stitching di nuova immagine in immagine_base e viceversa
+                    # lo stitching on similarity piu' vicino a 0 (migliore) viene considerato
+                    ok, offset_y, similarity_result = image_utils.find_stitch_offset(img, mem_image, roi_logo_x1, roi_logo_x2, 100)
+                    ok, offset_y, similarity_result2 = image_utils.find_stitch_offset(mem_image, img, roi_logo_x1, roi_logo_x2, 100)
+                    if similarity_result<similarity_result2:
+                        #normale stitching di img in immagine nastro (dove Y img risulta piu' in basso)
+                        immagine_nastro = image_utils.stitch_offset(img, immagine_nastro, offset_y)
+                    else:
+                        #stitching contrario immagine nastro in img (dove Y img risulta piu' alto)
+                        # ma siccome vogliamo mantenere l'immagine nastro di sfondo, e volendo inoltre mantenere il risultato
+                        # allineato in alto (immagine ferma), copiamo img in immagine_nastro, prendendo di img solo la parte che si sovrappone
+                        # a immagine_nastro
+                        immagine_nastro = image_utils.stitch_offset(img[offset_y:,:], immagine_nastro, offset_y)
+
+                    #ritagliamo il risultato solo in caso la dimensione supera quella impostata sulla spinbox
+                    h = int(app.spin_h_logo.get_value())
+                    if immagine_nastro.shape[0] > h:
+                        immagine_nastro = immagine_nastro[0:h,:)     # 0:mem_image.shape[1]] 
+                    
+                if not immagine_nastro is None:
+                    app.show_process_image(immagine_nastro)
+                    #h = int(app.spin_h_logo.get_value()) #andrebbe determinato h logo
+                    
+                    #l'ultima immagine la rendo disponibile per il prossimo stitching
+                    #img = image_utils.perspective_correction(img, perspective_correction_value_horiz, perspective_correction_value_vert)
+                    #immagine_nastro = images_buffer[-1][1]#immagine_nastro[0:h,:]
+
+                    #pulisco l'immagine per il successivo ciclo
+                    immagine_nastro = None
+                    #time.sleep(1.5)
+        except:
+            print("exception")
+
 
 def live_video_thread(app,
                 camera, 
-                img_logo,
-                stitch_minimum_overlap, 
                 perspective_correction_value_horiz, 
                 perspective_correction_value_vert):
 
@@ -336,6 +406,10 @@ class MyApp(App):
         #idle function called every update cycle
         if self.camera.continuous_acquire_run_flag:
             if not self.process_image is None:
+                #correct brightness and contrast
+                #cv2.addWeighted(self.process_image, alpha, np.zeros(img.shape, img.dtype),0, beta)
+                cv2.addWeighted(self.process_image, contrast, np.zeros(self.process_image.shape, self.process_image.dtype),0, brightness)
+
                 #cerca immagine di riferimento per centrare e tagliare immagine da mostrare
                 self.camera_image.refresh(self.process_image)
                 self.process_image = None
@@ -365,13 +439,13 @@ class MyApp(App):
         main_container = GridBox()
         main_container.attributes.update({"class":"GridBox","editor_constructor":"()","editor_varname":"main_container","editor_tag_type":"widget","editor_newclass":"False","editor_baseclass":"GridBox"})
         main_container.default_layout = """
-        |container_commands |container_image                                                                   | container_parameters  |
-        |container_commands |container_image                                                                   | container_parameters  |
-        |container_commands |container_image                                                                   | container_parameters  |
-        |container_commands |container_image                                                                   | container_parameters  |
-        |container_commands |container_image                                                                   | container_parameters  |
-        |container_commands |container_miniature                                                               | container_parameters  |
-        |container_process  |container_process                                                                 |start_stop | live_video|    
+        |container_commands |container_image                                                                                            |c_pars    |c_pars    |c_pars   |
+        |container_commands |container_image                                                                                            |c_pars    |c_pars    |c_pars   |
+        |container_commands |container_image                                                                                            |c_pars    |c_pars    |c_pars   |
+        |container_commands |container_image                                                                                            |c_pars    |c_pars    |c_pars   |
+        |container_commands |container_image                                                                                            |c_pars    |c_pars    |c_pars   |
+        |container_commands |container_miniature                                                                                        |c_pars    |c_pars    |c_pars   |
+        |container_process  |container_process                                                                                          |start_stop|live_video|overprint|    
         """
         main_container.set_from_asciiart(main_container.default_layout)
 
@@ -442,7 +516,7 @@ class MyApp(App):
         container_camera_image.append(self.roi_logo_widget)
 
         container_parameters = VBox()
-        container_parameters.style.update({"margin":"0px","display":"flex","justify-content":"flex-start","align-items":"center","flex-direction":"column","position":"static","overflow":"auto","grid-area":"container_parameters","border-color":"#808080","border-width":"2px","border-style":"dotted"})
+        container_parameters.style.update({"margin":"0px","display":"flex","justify-content":"flex-start","align-items":"center","flex-direction":"column","position":"static","overflow":"auto","grid-area":"c_pars","border-color":"#808080","border-width":"2px","border-style":"dotted"})
         
         lbl_exposure = Label('Esposizione')
         spin_exposure = SpinBox(1000,8,1000000,1)
@@ -465,7 +539,7 @@ class MyApp(App):
         container_parameters.append(container, 'container_h_logo')
 
 
-        main_container.append(container_parameters,'container_parameters')
+        main_container.append(container_parameters,'c_pars')
         container_miniature = HBox()
         container_miniature.style.update({"margin":"0px","display":"flex","justify-content":"flex-end","align-items":"center","flex-direction":"row-reverse","position":"static","overflow-x":"scroll","grid-area":"container_miniature","background-color":"#e0e0e0"})
         main_container.append(container_miniature,'container_miniature')
@@ -488,18 +562,22 @@ class MyApp(App):
         container_process.append(self.plot_histo_image_hsv)
 
         start_stop = Button('Start')
-        start_stop.style.update({"margin":"0px","position":"static","overflow":"auto","grid-area":"start_stop","background-color":"#39e600","font-weight":"bolder","font-size":"30px","height":"100%","letter-spacing":"3px"})
+        start_stop.style.update({"margin":"0px","position":"static","overflow":"auto","background-color":"#39e600","font-weight":"bolder","font-size":"30px","height":"100%","letter-spacing":"3px"})
         main_container.append(start_stop,'start_stop')
         main_container.children['container_commands'].children['bt_trigger'].onclick.connect(self.onclick_bt_trigger)
         main_container.children['container_commands'].children['bt_set_logo'].onclick.connect(self.onclick_bt_set_logo)
         spin_exposure.onchange.connect(self.onchange_spin_exposure)
         main_container.children['start_stop'].onclick.connect(self.onclick_start_stop, self.camera.start)
         
-
         live_video = Button('Live Start')
-        live_video.style.update({"margin":"0px","position":"static","overflow":"auto","grid-area":"live_video","background-color":"blue","font-weight":"bolder","font-size":"30px","height":"100%","letter-spacing":"3px"})
+        live_video.style.update({"margin":"0px","position":"static","overflow":"auto","background-color":"blue","font-weight":"bolder","font-size":"30px","height":"100%","letter-spacing":"3px"})
         main_container.append(live_video, "live_video")
         main_container.children['live_video'].onclick.connect(self.onclick_live_video, self.camera.start)
+        
+        image_overprint = Button('Overprint')
+        image_overprint.style.update({"margin":"0px","position":"static","overflow":"auto","background-color":"violet","font-weight":"bolder","font-size":"30px","height":"100%","letter-spacing":"3px"})
+        main_container.append(image_overprint, "overprint")
+        main_container.children['overprint'].onclick.connect(self.onclick_overprint, self.camera.start)
         
 
         global_container.append([menubar, main_container])
@@ -692,13 +770,13 @@ class MyApp(App):
             emitter.style['background-color'] = 'red'
             self.main_container.children['start_stop'].onclick.connect(self.onclick_start_stop, self.camera.stop)
             main_container.set_from_asciiart("""
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
             |container_image                                                                        | start_stop            |
             """)
             
@@ -715,20 +793,20 @@ class MyApp(App):
             w = float(self.spin_horizontal_perspective.get_value())
             h = float(self.spin_vertical_perspective.get_value())
             self.camera.set_trigger_mode(1) 
-            self.process_thread = threading.Thread(target = live_video_thread, args = [self, self.camera, self.logo_image, 15, w, h] )
+            self.process_thread = threading.Thread(target = live_video_thread, args = [self, self.camera, w, h] )
             self.process_thread.setDaemon(True)
             self.process_thread.start()
             emitter.set_text("Live Stop")
             emitter.style['background-color'] = 'yellow'
             self.main_container.children['live_video'].onclick.connect(self.onclick_live_video, self.camera.stop)
             main_container.set_from_asciiart("""
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
-            |container_image                                                                        | container_parameters  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
             |container_image                                                                        | live_video            |
             """)
 
@@ -737,6 +815,36 @@ class MyApp(App):
             emitter.set_text("Live Start")
             emitter.style['background-color'] = 'blue'
             self.main_container.children['live_video'].onclick.connect(self.onclick_live_video, self.camera.start)
+            main_container.set_from_asciiart(self.main_container.default_layout)
+
+    def onclick_overprint(self, emitter, method):
+        method() #start or stop
+        if not (method == self.camera.stop):
+            w = float(self.spin_horizontal_perspective.get_value())
+            h = float(self.spin_vertical_perspective.get_value())
+            self.camera.set_trigger_mode(1) 
+            self.process_thread = threading.Thread(target = image_overprint_thread, args = [self, self.camera, w, h] )
+            self.process_thread.setDaemon(True)
+            self.process_thread.start()
+            emitter.set_text("Stop")
+            emitter.style['background-color'] = 'red'
+            self.main_container.children['overprint'].onclick.connect(self.onclick_overprint, self.camera.stop)
+            main_container.set_from_asciiart("""
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | c_pars  |
+            |container_image                                                                        | overprint             |
+            """)
+
+        else:
+            self.process_thread_stop_flag = True
+            emitter.set_text("Overprint")
+            emitter.style['background-color'] = 'violet'
+            self.main_container.children['overprint'].onclick.connect(self.onclick_overprint, self.camera.start)
             main_container.set_from_asciiart(self.main_container.default_layout)
 
     def menu_open_clicked(self, widget):
